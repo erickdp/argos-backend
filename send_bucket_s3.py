@@ -10,10 +10,10 @@ BUCKET = "helmet-detection-data"
 
 SOURCE_FILE = "./videos"
 
-
-# SECRET_KEY = 'tPV7sNZ0x8DRpX8eH/xzHnKkkrCgyDGnUquK9Hu9' # erick
+# SECRET_KEY = 'tPV7sNZ0x8DRpX8eH/xzHnKkkrCgyDGnUquK9Hu9'  # erick
 # ACCESS_KEY = 'AKIA4DDPPWB4TC332FTC'
 # BUCKET = "ucemineriabucket"
+
 
 def upload_to_aws(local_file, s3_file):
     s3 = boto3.client('s3', aws_access_key_id=ACCESS_KEY,

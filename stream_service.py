@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from streamlink import Streamlink
 from numpy import random
 import numpy as np
+import re
 
 from models.experimental import attempt_load
 from send_bucket_s3 import upload_to_aws, SOURCE_FILE
@@ -71,7 +72,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))
 
-        frames_video = 200
+        frames_video = 100
         grabar_video = False
         output = None
         while street_stream.isOpened():
@@ -129,7 +130,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                             grabar_frame = False
 
                             if frames_video == 0:
-                                frames_video = 200
+                                frames_video = 100
                                 grabar_video = False
                                 output.release()
                                 threads.submit(upload_to_aws,
@@ -144,7 +145,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                     frames_video = frames_video - 1
 
                     if frames_video == 0:
-                        frames_video = 200
+                        frames_video = 100
                         grabar_video = False
                         output.release()
                         threads.submit(upload_to_aws, f'{v_name}',
@@ -163,5 +164,13 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
         output.release()
         os.remove(f'{SOURCE_FILE}/{v_name}')
 
-# if __name__ == '__main__':
-#     init_steam('https://www.youtube.com/watch?v=zu6yUYEERwA', Streamlink(), None)
+
+def validate_url(stream_url):
+    search = re.search(r'[\/\/a-zA-Z0-9@:%._\+~#=]{2,256}\.\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)',
+                       stream_url)
+    return search
+
+
+if __name__ == '__main__':
+    # init_steam('https://www.youtube.com/watch?v=zu6yUYEERwA', Streamlink(), None)
+    print(validate_url("rstp://127.0.0.0:8000/user?admin=23423"))
