@@ -13,7 +13,7 @@ from numpy import random
 import numpy as np
 
 from models.experimental import attempt_load
-from send_bucket_s3 import upload_to_aws
+from send_bucket_s3 import upload_to_aws, SOURCE_FILE
 from utils.datasets import letterbox
 from utils.general import set_logging, check_img_size, non_max_suppression, scale_coords
 from utils.plots import plot_one_box
@@ -38,10 +38,7 @@ opt = {
         "ec": "https://www.youtube.com/watch?v=EnXaKSxnrqc",
         "ph": "https://www.youtube.com/watch?v=qgNTbBn0JCY&ab_channel=TheRealSamuiWebcam"
     },
-    'path_videos': "./videos"
 }
-
-source_file = opt["path_videos"]
 
 
 def init_steam(url: str, sl: Streamlink, my_queue: Queue):
@@ -116,9 +113,10 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                                     date = datetime.now()
                                     v_name = "%s%s%s%s" % (date.day, date.hour, date.minute, date.second)
                                     output = cv2.VideoWriter(
-                                        f'{source_file}/v-{v_name}.mp4',
+                                        f'{SOURCE_FILE}/v-{v_name}.mp4',
                                         cv2.VideoWriter_fourcc(*'MP4V'), 30, (w, h))
                                     print(f"--- Class Detection --- [{clase}] -- recording")
+                                    print("Grabando video %s.mp4" % v_name)
                                     grabar_video = True
                                     # cv2_imshow(img0)
 
@@ -163,7 +161,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
         # print("Video eliminado")
         street_stream.release()
         output.release()
-        os.remove(f'{source_file}/{v_name}')
+        os.remove(f'{SOURCE_FILE}/{v_name}')
 
 # if __name__ == '__main__':
 #     init_steam('https://www.youtube.com/watch?v=zu6yUYEERwA', Streamlink(), None)

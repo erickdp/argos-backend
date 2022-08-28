@@ -4,26 +4,26 @@ import subprocess
 import boto3
 from botocore.exceptions import NoCredentialsError
 
-SECRET_KEY = 'ULGn7r0Yy/SvHBK0TPPOXyjSOALZv7T1gP3vY3Ir' # saul
+SECRET_KEY = 'ULGn7r0Yy/SvHBK0TPPOXyjSOALZv7T1gP3vY3Ir'  # saul
 ACCESS_KEY = 'AKIA547RNSAVXOJWAYHC'
 BUCKET = "helmet-detection-data"
+
+SOURCE_FILE = "./videos"
+
 
 # SECRET_KEY = 'tPV7sNZ0x8DRpX8eH/xzHnKkkrCgyDGnUquK9Hu9' # erick
 # ACCESS_KEY = 'AKIA4DDPPWB4TC332FTC'
 # BUCKET = "ucemineriabucket"
 
-from stream_service import source_file
-
-
 def upload_to_aws(local_file, s3_file):
     s3 = boto3.client('s3', aws_access_key_id=ACCESS_KEY,
                       aws_secret_access_key=SECRET_KEY)
 
-    subprocess.run(['ffmpeg', '-i', f'{source_file}/{local_file}', f'{source_file}/f{local_file}'])
+    subprocess.run(['ffmpeg', '-i', f'{SOURCE_FILE}/{local_file}', f'{SOURCE_FILE}/f{local_file}'])
     try:
-        s3.upload_file(f'{source_file}/{local_file}', BUCKET, s3_file, ExtraArgs={'ContentType': "video/mp4"})
-        os.remove(f'{source_file}/{local_file}')
-        os.remove(f'{source_file}/f{local_file}')
+        s3.upload_file(f'{SOURCE_FILE}/{local_file}', BUCKET, s3_file, ExtraArgs={'ContentType': "video/mp4"})
+        os.remove(f'{SOURCE_FILE}/{local_file}')
+        os.remove(f'{SOURCE_FILE}/f{local_file}')
         print("Video enviado a s3::%s" % s3_file)
         return True
     except FileNotFoundError:
@@ -32,8 +32,6 @@ def upload_to_aws(local_file, s3_file):
     except NoCredentialsError:
         print("Credentials not available")
         return False
-
-
 
 # def upload_to_one_drive(local_file, s3_file):
 
