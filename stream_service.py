@@ -37,8 +37,11 @@ opt = {
         "pl": "https://www.youtube.com/watch?v=zu6yUYEERwA",
         "ec": "https://www.youtube.com/watch?v=EnXaKSxnrqc",
         "ph": "https://www.youtube.com/watch?v=qgNTbBn0JCY&ab_channel=TheRealSamuiWebcam"
-    }
+    },
+    'path_videos': "./videos"
 }
+
+source_file = opt["path_videos"]
 
 
 def init_steam(url: str, sl: Streamlink, my_queue: Queue):
@@ -113,7 +116,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                                     date = datetime.now()
                                     v_name = "%s%s%s%s" % (date.day, date.hour, date.minute, date.second)
                                     output = cv2.VideoWriter(
-                                        f'./videos/v-{v_name}.mp4',
+                                        f'{source_file}/v-{v_name}.mp4',
                                         cv2.VideoWriter_fourcc(*'MP4V'), 30, (w, h))
                                     print(f"--- Class Detection --- [{clase}] -- recording")
                                     grabar_video = True
@@ -132,7 +135,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                                 grabar_video = False
                                 output.release()
                                 threads.submit(upload_to_aws,
-                                               f'./videos/v-{v_name}.mp4',
+                                               f'v-{v_name}.mp4',
                                                f's{v_name}.mp4')
 
                     else:
@@ -146,7 +149,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                         frames_video = 200
                         grabar_video = False
                         output.release()
-                        threads.submit(upload_to_aws, f'./videos/v-{v_name}.mp4',
+                        threads.submit(upload_to_aws, f'v-{v_name}.mp4',
                                        f's{v_name}.mp4')
 
             try:
@@ -160,8 +163,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
         # print("Video eliminado")
         street_stream.release()
         output.release()
-        # os.remove('./videos/%s' % v_name)
-
+        os.remove(f'{source_file}/{v_name}')
 
 # if __name__ == '__main__':
 #     init_steam('https://www.youtube.com/watch?v=zu6yUYEERwA', Streamlink(), None)
