@@ -21,7 +21,7 @@ def upload_to_aws(local_file, s3_file):
 
     subprocess.run(['ffmpeg', '-i', f'{SOURCE_FILE}/{local_file}', f'{SOURCE_FILE}/f{local_file}'])
     try:
-        s3.upload_file(f'{SOURCE_FILE}/{local_file}', BUCKET, s3_file, ExtraArgs={'ContentType': "video/mp4"})
+        s3.upload_file(f'{SOURCE_FILE}/f{local_file}', BUCKET, s3_file, ExtraArgs={'ContentType': "video/mp4"})
         os.remove(f'{SOURCE_FILE}/{local_file}')
         os.remove(f'{SOURCE_FILE}/f{local_file}')
         print("Video enviado a s3::%s" % s3_file)

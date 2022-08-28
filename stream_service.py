@@ -111,12 +111,12 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                                 clase = names[int(cls)]
                                 if not grabar_video:
                                     date = datetime.now()
-                                    v_name = "%s%s%s%s" % (date.day, date.hour, date.minute, date.second)
+                                    v_name = "%s%s%s%s.mp4" % (date.day, date.hour, date.minute, date.second)
                                     output = cv2.VideoWriter(
-                                        f'{SOURCE_FILE}/v-{v_name}.mp4',
+                                        f'{SOURCE_FILE}/{v_name}',
                                         cv2.VideoWriter_fourcc(*'MP4V'), 30, (w, h))
                                     print(f"--- Class Detection --- [{clase}] -- recording")
-                                    print("Grabando video %s.mp4" % v_name)
+                                    print("Grabando video %s" % v_name)
                                     grabar_video = True
                                     # cv2_imshow(img0)
 
@@ -133,8 +133,8 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                                 grabar_video = False
                                 output.release()
                                 threads.submit(upload_to_aws,
-                                               f'v-{v_name}.mp4',
-                                               f's{v_name}.mp4')
+                                               f'{v_name}',
+                                               f's{v_name}')
 
                     else:
                         grabar_frame = True
@@ -147,8 +147,8 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
                         frames_video = 200
                         grabar_video = False
                         output.release()
-                        threads.submit(upload_to_aws, f'v-{v_name}.mp4',
-                                       f's{v_name}.mp4')
+                        threads.submit(upload_to_aws, f'{v_name}',
+                                       f's{v_name}')
 
             try:
                 item = my_queue.get_nowait()
