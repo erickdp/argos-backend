@@ -3,6 +3,15 @@ from typing import Union
 from fastapi import HTTPException
 
 from stream_service import init_steam, threads, source_queue, source_sl, app, validate_url
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # single_thread, my_queue, sl, app = init_threads()
