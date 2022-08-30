@@ -2,7 +2,7 @@ from typing import Union
 
 from fastapi import HTTPException
 
-from stream_service import init_steam, threads, source_queue, source_sl, app, validate_url
+from stream_service import init_steam, threads, source_queue, source_sl, app, validate_rtsp
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
@@ -23,10 +23,10 @@ async def root():
 
 @app.get("/stream", status_code=200)
 async def root(stream_url: Union[str, None] = None):
-    url = validate_url(stream_url)
-    if not url:
+    type_url = validate_rtsp(stream_url)
+    if type_url == -2:
         raise HTTPException(status_code=404, detail="Recurso incorrecto")
-    threads.submit(init_steam, url.string, source_sl, source_queue)
+    threads.submit(init_steam, stream_url, source_sl, source_queue, type_url)
     return {"msg": "Iniciando procesado de stream"}
 
 

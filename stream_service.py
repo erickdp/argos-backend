@@ -1,17 +1,17 @@
 import multiprocessing
 import os
 import queue
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from multiprocessing import Queue
 
 import cv2
+import numpy as np
 import torch
 from fastapi import FastAPI
-from streamlink import Streamlink
 from numpy import random
-import numpy as np
-import re
+from streamlink import Streamlink
 
 from models.experimental import attempt_load
 from send_bucket_s3 import upload_to_aws, SOURCE_FILE
@@ -42,10 +42,13 @@ opt = {
 }
 
 
-def init_steam(url: str, sl: Streamlink, my_queue: Queue):
+def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
     print("Iniciando stream %s" % url)
     # se define que live requerido y en la calidad deseada, esto afecta al rendimiento según los fps
-    video_stream = sl.streams(url)["360p"].url
+    if not is_rtsp:
+        video_stream = sl.streams(url)["360p"].url
+    else:
+        video_stream = url
     # usamos la libreria de open cv u cv2 para procesar el video entrante en funcion de frames
     street_stream = cv2.VideoCapture(video_stream)
 
@@ -54,6 +57,15 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
     w = int(street_stream.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(street_stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(fps, w, h)
+
+    # while True:
+    #     ret, frame = street_stream.read()
+    #     if ret:
+    #         cv2.imshow('Frame', frame)
+    #         if cv2.waitKey(25) & 0xFF == ord('q'):
+    #             break
+    # street_stream.release()
+    # cv2.destroyAllWindows()
 
     pt = 0
     with torch.no_grad():  # permite que la gpu no guarde en cache el cálculo del gradiente
@@ -165,12 +177,15 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue):
         os.remove(f'{SOURCE_FILE}/{v_name}')
 
 
-def validate_url(stream_url):
-    search = re.search(r'[\/\/a-zA-Z0-9@:%._\+~#=]{2,256}\.\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)',
-                       stream_url)
-    return search
+def validate_rtsp(stream_url):
+    if re.search(r'rtsp:\/\/[a-z]{3,8}:[a-z]{3,8}@([0-9]+.){4}:[0-9]{3,4}([-a-zA-Z0-9@:%_\+.~#?&//=]*)', stream_url):
+        return True
+    elif re.search(r'[\/\/a-zA-Z0-9@:%._\+~#=]{2,256}\.\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)', stream_url):
+        return False
+    else:
+        return -2
 
-
-if __name__ == '__main__':
-    # init_steam('https://www.youtube.com/watch?v=zu6yUYEERwA', Streamlink(), None)
-    print(validate_url("rstp://127.0.0.0:8000/user?admin=23423"))
+# if __name__ == '__main__':
+# init_steam('https://www.youtube.com/watch?v=zu6yUYEERwA', Streamlink(), None)
+# print(validate_url("rstp://127.0.0.0:8000/user?admin=23423"))
+# init_rstp("asfds")
