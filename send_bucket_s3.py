@@ -2,6 +2,7 @@ import os
 import subprocess
 
 import boto3
+import ffmpeg
 from botocore.exceptions import NoCredentialsError
 
 SECRET_KEY = 'ULGn7r0Yy/SvHBK0TPPOXyjSOALZv7T1gP3vY3Ir'  # saul
@@ -15,12 +16,14 @@ SOURCE_FILE = "./videos"
 # BUCKET = "ucemineriabucket"
 
 
-def upload_to_aws(local_file, s3_file):
+def upload_to_aws(local_file, s3_file, speed):
     s3 = boto3.client('s3', aws_access_key_id=ACCESS_KEY,
                       aws_secret_access_key=SECRET_KEY)
 
-    subprocess.run(['ffmpeg', '-i', f'{SOURCE_FILE}/{local_file}', f'{SOURCE_FILE}/f{local_file}'])
+    # subprocess.run(['ffmpeg', '-i', f'{SOURCE_FILE}/{local_file}', f'{SOURCE_FILE}/f{local_file}'])
+
     try:
+        ffmpeg.input(f'{SOURCE_FILE}/{local_file}').setpts(f'{speed}*PTS').output(f'{SOURCE_FILE}/f{local_file}').run()
         s3.upload_file(f'{SOURCE_FILE}/f{local_file}', BUCKET, s3_file, ExtraArgs={'ContentType': "video/mp4"})
         os.remove(f'{SOURCE_FILE}/{local_file}')
         os.remove(f'{SOURCE_FILE}/f{local_file}')

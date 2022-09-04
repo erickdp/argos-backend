@@ -2,6 +2,8 @@ import multiprocessing
 import os
 import queue
 import re
+import psycopg2
+import pytz
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from multiprocessing import Queue
@@ -20,10 +22,18 @@ from utils.general import set_logging, check_img_size, non_max_suppression, scal
 from utils.plots import plot_one_box
 from utils.torch_utils import select_device, time_synchronized
 
-threads, source_queue, source_sl, app = ThreadPoolExecutor(max_workers=3), \
-                                        multiprocessing.Queue(), \
-                                        Streamlink(), \
-                                        FastAPI()
+threads, source_queue, source_sl, app, conn, timezone = ThreadPoolExecutor(max_workers=3), \
+                                                        multiprocessing.Queue(), \
+                                                        Streamlink(), \
+                                                        FastAPI(), \
+                                                        psycopg2.connect(
+                                                            database='gkzejkjy',
+                                                            user='gkzejkjy',
+                                                            password='dIOoqb7HmpxybbKsB1SeWQmZnCNVhOa9',
+                                                            host='chunee.db.elephantsql.com',
+                                                            port='5432',
+                                                        ), \
+                                                        pytz.timezone("America/Guayaquil")
 
 opt = {
     "weights": "runs/train/exp/weights/epoch_069.pt",
@@ -39,13 +49,23 @@ opt = {
         "ec": "https://www.youtube.com/watch?v=EnXaKSxnrqc",
         "ph": "https://www.youtube.com/watch?v=qgNTbBn0JCY&ab_channel=TheRealSamuiWebcam"
     },
+    'query_insert': 'INSERT INTO INFRACCIONES (fecha, hora, num_infracciones) VALUES (%s, %s, %s)',
+    'query_select': 'SELECT HORA, NUM_INFRACCIONES FROM INFRACCIONES WHERE FECHA = %s',
 }
 
 
 def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
+    speed = 1.2
+    num_infracciones = 0
+    fecha_actual = datetime.now(timezone)
+    start_time = datetime.strptime(fecha_actual.time().strftime('%H:%M'), '%H:%M')
+    dia_actual = fecha_actual.strftime('%y-%m-%d')  # ya es str
+    init_frames_video = 250
     print("Iniciando stream %s" % url)
     # se define que live requerido y en la calidad deseada, esto afecta al rendimiento según los fps
     if not is_rtsp:
+        init_frames_video = 200
+        speed = 2.3
         video_stream = sl.streams(url)["360p"].url
     else:
         video_stream = url
@@ -58,6 +78,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
     h = int(street_stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(fps, w, h)
 
+    # descomentar para ver live en vivo
     # while True:
     #     ret, frame = street_stream.read()
     #     if ret:
@@ -84,7 +105,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))
 
-        frames_video = 100
+        frames_video = init_frames_video
         grabar_video = False
         output = None
         while street_stream.isOpened():
@@ -130,6 +151,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
                                         cv2.VideoWriter_fourcc(*'MP4V'), 30, (w, h))
                                     print(f"--- Class Detection --- [{clase}] -- recording")
                                     print("Grabando video %s" % v_name)
+                                    num_infracciones = num_infracciones + 1
                                     grabar_video = True
                                     # cv2_imshow(img0)
 
@@ -142,12 +164,14 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
                             grabar_frame = False
 
                             if frames_video == 0:
-                                frames_video = 100
+                                frames_video = init_frames_video
+                                num_infracciones = 0
                                 grabar_video = False
                                 output.release()
                                 threads.submit(upload_to_aws,
                                                f'{v_name}',
-                                               f's{v_name}')
+                                               f's{v_name}',
+                                               speed)
 
                     else:
                         grabar_frame = True
@@ -157,11 +181,12 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
                     frames_video = frames_video - 1
 
                     if frames_video == 0:
-                        frames_video = 100
+                        frames_video = init_frames_video
+                        num_infracciones = 0
                         grabar_video = False
                         output.release()
                         threads.submit(upload_to_aws, f'{v_name}',
-                                       f's{v_name}')
+                                       f's{v_name}', speed)
 
             try:
                 item = my_queue.get_nowait()
@@ -169,8 +194,18 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
                 continue
             else:
                 if item:
-                    print("Saliendo del Stream")
+                    conn.close()
+                    print("Saliendo del Stream y cerrando conexion")
                     break
+
+            end_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
+
+            if str(end_time - start_time)[:4] == '0:05':
+                save_dates(dia_actual, start_time.hour, num_infracciones)
+                print("Enviando numero de infractores a la bd", dia_actual, num_infracciones)
+                start_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
+                continue
+
         # print("Video eliminado")
         street_stream.release()
         output.release()
@@ -178,14 +213,74 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
 
 
 def validate_rtsp(stream_url):
-    if re.search(r'rtsp:\/\/[a-z]{3,8}:[a-z]{3,8}@([0-9]+.){4}:[0-9]{3,4}([-a-zA-Z0-9@:%_\+.~#?&//=]*)', stream_url):
+    if re.search(r'rtsp:\/\/[a-z0-9]{3,8}:[a-z0-9]{3,8}@([0-9]+.){4}:[0-9]{3,4}([-a-zA-Z0-9@:%_\+.~#?&//=]*)',
+                 stream_url):
         return True
     elif re.search(r'[\/\/a-zA-Z0-9@:%._\+~#=]{2,256}\.\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)', stream_url):
         return False
     else:
         return -2
 
-# if __name__ == '__main__':
-# init_steam('https://www.youtube.com/watch?v=zu6yUYEERwA', Streamlink(), None)
-# print(validate_url("rstp://127.0.0.0:8000/user?admin=23423"))
-# init_rstp("asfds")
+
+def save_dates(dia_actual, start_time, num_infracciones):
+
+    cur = conn.cursor()
+    data = opt['query_insert'] % (f"'{dia_actual}'", start_time, num_infracciones)
+    cur.execute(data)
+    conn.commit()
+
+    # timezone = pytz.timezone("America/Guayaquil")
+    # temp = 1
+    # while temp != 0:
+    #     cur = conn.cursor()
+    #
+    #     fecha_actual = datetime.now(timezone)
+    #     hora_actual = fecha_actual.time().strftime('%H:%M')
+    #     dia_actual = fecha_actual.strftime('%y-%m-%d')  # ya es str
+    #
+    #     print(fecha_actual, hora_actual, dia_actual, type(dia_actual))
+    #
+    #     start_time = datetime.strptime(hora_actual, '%H:%M')
+    #     # sleep(5)
+    #     end_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
+    #
+    #     end_time = datetime.strptime('01:33', '%H:%M')
+    #
+    #     final_time = end_time - start_time
+    #     print(type(final_time), final_time, str(final_time)[:4] == '0:01', '%s' % '2022-09-03')
+    #
+    #     # query = "INSERT INTO INFRACCIONES (fecha, hora, num_infracciones) VALUES (%s, %s, %s)"
+    #     data = opt['query'] % (f"'{dia_actual}'", start_time.hour, 5)
+    #     print(data)
+    #     cur.execute(data)
+    #
+    #     conn.commit()
+    #     temp = temp - 1
+    # conn.close()
+    # conn.close()
+
+
+def fetch_data(fecha: str) -> list:
+    cur = conn.cursor()
+    query = 'SELECT HORA, NUM_INFRACCIONES FROM INFRACCIONES WHERE FECHA = %s'
+    data = query % f"'{fecha}'"
+    cur.execute(data)
+    return cur.fetchall()
+
+
+if __name__ == '__main__':
+    conn = psycopg2.connect(
+        database='gkzejkjy',
+        user='gkzejkjy',
+        password='dIOoqb7HmpxybbKsB1SeWQmZnCNVhOa9',
+        host='chunee.db.elephantsql.com',
+        port='5432',
+    )
+    cur = conn.cursor()
+    query = 'SELECT HORA, NUM_INFRACCIONES FROM INFRACCIONES WHERE FECHA = %s'
+    data = query % "'22-09-04'"
+    cur.execute(data)
+    rows = cur.fetchall()
+    print(rows)
+    # init_steam('http://173.255.219.215/stream/helmet-cam/index.m3u8', Streamlink(), None, True)
+    # print(validate_rtsp("rtsp://grupo9:grupo9@45.186.5.30:554/stream1"))

@@ -2,7 +2,7 @@ from typing import Union
 
 from fastapi import HTTPException
 
-from stream_service import init_steam, threads, source_queue, source_sl, app, validate_rtsp
+from stream_service import init_steam, threads, source_queue, source_sl, app, validate_rtsp, fetch_data
 from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
@@ -34,3 +34,15 @@ async def root(stream_url: Union[str, None] = None):
 def say_hello():
     source_queue.put(True)
     return {"msg": "Deteniendo procesamiento de stream"}
+
+
+@app.get("/fetch", status_code=200)
+def get_dates(date: Union[str, None] = None):
+    dates = fetch_data(date)
+    return {
+        "msg": "exito",
+        'data': dates
+    }
+
+# if __name__ == '__main__':
+#     uvicorn.run(app, port=8080, host='0.0.0.0')
