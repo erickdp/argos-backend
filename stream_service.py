@@ -1,15 +1,14 @@
-import multiprocessing
 import os
 import queue
 import re
-import psycopg2
-import pytz
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from multiprocessing import Queue
 
 import cv2
 import numpy as np
+import psycopg2
+import pytz
 import torch
 from fastapi import FastAPI
 from numpy import random
@@ -23,7 +22,7 @@ from utils.plots import plot_one_box
 from utils.torch_utils import select_device, time_synchronized
 
 threads, source_queue, source_sl, app, conn, timezone = ThreadPoolExecutor(max_workers=3), \
-                                                        multiprocessing.Queue(), \
+                                                        Queue(), \
                                                         Streamlink(), \
                                                         FastAPI(), \
                                                         psycopg2.connect(
@@ -49,24 +48,36 @@ opt = {
         "ec": "https://www.youtube.com/watch?v=EnXaKSxnrqc",
         "ph": "https://www.youtube.com/watch?v=qgNTbBn0JCY&ab_channel=TheRealSamuiWebcam"
     },
-    'query_insert': 'INSERT INTO INFRACCIONES (fecha, hora, num_infracciones) VALUES (%s, %s, %s)',
-    'query_select': 'SELECT HORA, NUM_INFRACCIONES FROM INFRACCIONES WHERE FECHA = %s',
+    'query_insert': 'INSERT INTO INFRACCIONES (fecha, hora, num_infracciones, num_no_infracciones, camara, name_camera) '
+                    'VALUES (%s, %s, %s, %s, %s, %s)',
+    'query_select': 'SELECT HORA, NUM_INFRACCIONES, NUM_NO_INFRACCIONES '
+                    'FROM INFRACCIONES WHERE FECHA = %s AND CAMARA = %s',
+    'query_all_select': 'SELECT FECHA, CAMARA, NAME_CAMERA FROM INFRACCIONES',
+    'query_one_camera_select': 'SELECT NAME_CAMERA FROM INFRACCIONES WHERE CAMARA = %s',
 }
 
 
-def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
+def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp, url_almacenada, camera_name):
+    print("Iniciando stream %s" % url)
     speed = 1.2
-    num_infracciones = 0
+    num_infracciones, num_no_infracciones = 0, 0
     fecha_actual = datetime.now(timezone)
     start_time = datetime.strptime(fecha_actual.time().strftime('%H:%M'), '%H:%M')
-    dia_actual = fecha_actual.strftime('%y-%m-%d')  # ya es str
+    dia_actual = fecha_actual.strftime('%y-%m-%d')  # ya es st
+    saved_camera = fetch_camera_data(url_almacenada)
+    if not saved_camera:
+        save_dates(dia_actual, 0, 0, 0, url_almacenada, camera_name)
+    else:
+        camera_name = saved_camera[0]
+        print("Stream ya existente", url_almacenada)
+
     init_frames_video = 250
     print("Iniciando stream %s" % url)
     # se define que live requerido y en la calidad deseada, esto afecta al rendimiento según los fps
     if not is_rtsp:
         video_stream = sl.streams(url)["720p"].url
     else:
-        init_frames_video = 200
+        init_frames_video = 180
         speed = 2.3
         video_stream = url
     # usamos la libreria de open cv u cv2 para procesar el video entrante en funcion de frames
@@ -138,6 +149,10 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
                         for c in det[:, -1].unique():
                             n = (det[:, -1] == c).sum()  # detections per class
                             s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "  # add to string
+                            if int(c) == 1:
+                                i = int(n)
+                            else:
+                                ni = int(n)
 
                         for *xyxy, conf, cls in reversed(det):
                             if conf >= 0.7:
@@ -151,7 +166,10 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
                                         cv2.VideoWriter_fourcc(*'MP4V'), 30, (w, h))
                                     print(f"--- Class Detection --- [{clase}] -- recording")
                                     print("Grabando video %s" % v_name)
-                                    num_infracciones = num_infracciones + 1
+                                    num_infracciones = num_infracciones + i
+                                    num_no_infracciones = num_no_infracciones + ni
+                                    print("Capturando infractores", num_infracciones, "No infractores",
+                                          num_no_infracciones)
                                     grabar_video = True
                                     # cv2_imshow(img0)
 
@@ -165,13 +183,10 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
 
                             if frames_video == 0:
                                 frames_video = init_frames_video
-                                num_infracciones = 0
+
                                 grabar_video = False
                                 output.release()
-                                threads.submit(upload_to_aws,
-                                               f'{v_name}',
-                                               f's{v_name}',
-                                               speed)
+                                threads.submit(upload_to_aws, f'{v_name}', f's{v_name}', speed)
 
                     else:
                         grabar_frame = True
@@ -182,29 +197,30 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
 
                     if frames_video == 0:
                         frames_video = init_frames_video
-                        num_infracciones = 0
+
                         grabar_video = False
                         output.release()
-                        threads.submit(upload_to_aws, f'{v_name}',
-                                       f's{v_name}', speed)
+                        threads.submit(upload_to_aws, v_name, f's{v_name}', speed)
 
             try:
                 item = my_queue.get_nowait()
             except queue.Empty:
+                end_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
+
+                if str(end_time - start_time)[:4] == '0:10':  # se envia cada 6 min
+                    print("Enviando numero de infractores a la bd", dia_actual, num_infracciones, num_no_infracciones,
+                          url_almacenada)
+                    save_dates(dia_actual, start_time.hour, num_infracciones, num_no_infracciones, url_almacenada,
+                               camera_name)
+                    num_infracciones = 0
+                    num_no_infracciones = 0
+                    start_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
                 continue
             else:
                 if item:
                     conn.close()
                     print("Saliendo del Stream y cerrando conexion")
                     break
-
-            end_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
-
-            if str(end_time - start_time)[:4] == '0:05':
-                save_dates(dia_actual, start_time.hour, num_infracciones)
-                print("Enviando numero de infractores a la bd", dia_actual, num_infracciones)
-                start_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
-                continue
 
         # print("Video eliminado")
         street_stream.release()
@@ -222,12 +238,13 @@ def validate_rtsp(stream_url):
         return -2
 
 
-def save_dates(dia_actual, start_time, num_infracciones):
-
+def save_dates(dia_actual, start_time, num_infracciones, num_no_infracciones, camara, camera_name):
     cur = conn.cursor()
-    data = opt['query_insert'] % (f"'{dia_actual}'", start_time, num_infracciones)
+    data = opt['query_insert'] % (
+        f"'{dia_actual}'", start_time, num_infracciones, num_no_infracciones, f"'{camara}'", f"'{camera_name}'")
     cur.execute(data)
     conn.commit()
+    print("Guardando data")
 
     # timezone = pytz.timezone("America/Guayaquil")
     # temp = 1
@@ -260,12 +277,55 @@ def save_dates(dia_actual, start_time, num_infracciones):
     # conn.close()
 
 
-def fetch_data(fecha: str) -> list:
+def fetch_camera_data(url):
     cur = conn.cursor()
-    query = 'SELECT HORA, NUM_INFRACCIONES FROM INFRACCIONES WHERE FECHA = %s'
-    data = query % f"'{fecha}'"
+    data = opt['query_one_camera_select'] % f"'{url}'"
     cur.execute(data)
-    return cur.fetchall()
+    return cur.fetchone()
+
+
+def fetch_all_cameras():
+    cur = conn.cursor()
+    data = opt['query_all_select']
+    cur.execute(data)
+    arr = []
+    for i in cur.fetchall():
+        my_data = {'ip': i[1], 'name': i[2]}
+        if my_data not in arr:
+            arr.append(my_data)
+    return arr
+
+
+def fetch_data(fecha: str, url) -> dict:
+    cur = conn.cursor()
+    data = opt['query_select'] % (f"'{fecha}'", f"'{url}'")
+    cur.execute(data)
+
+    my_dict = {}
+
+    for i in cur.fetchall():
+        if not i[0] in my_dict.keys():
+            my_dict[i[0]] = {
+                'num_infracciones': 0,
+                'num_no_infracciones': 0
+            }
+        sub_dict = my_dict[i[0]]
+        sub_dict["num_infracciones"] = sub_dict["num_infracciones"] + i[1]
+        sub_dict["num_no_infracciones"] = sub_dict["num_no_infracciones"] + i[2]
+        my_dict[i[0]] = sub_dict
+
+    return my_dict
+
+
+def fetch_all_data() -> list:
+    cur = conn.cursor()
+    data = opt['query_all_select']
+    cur.execute(data)
+    arr = []
+    for i in cur.fetchall():
+        if i[0] not in arr:
+            arr.append(i[0])
+    return arr
 
 
 if __name__ == '__main__':
@@ -277,10 +337,18 @@ if __name__ == '__main__':
         port='5432',
     )
     cur = conn.cursor()
-    query = 'SELECT HORA, NUM_INFRACCIONES FROM INFRACCIONES WHERE FECHA = %s'
-    data = query % "'22-09-04'"
+    query = 'SELECT CAMARA FROM INFRACCIONES WHERE CAMARA = %s'
+    data = query % "'45.186.5.4430:554'"
     cur.execute(data)
-    rows = cur.fetchall()
-    print(rows)
+    if cur.fetchone():
+        print("SI TODO NICE")
+    conn.close()
+    # print(rows)
+    # my_data = {
+    # }
+    # my_data["hora"] = 1
+    # my_data["a"] = 1
+    # my_data["v"] = 1
+    # print(my_data)
     # init_steam('http://173.255.219.215/stream/helmet-cam/index.m3u8', Streamlink(), None, True)
     # print(validate_rtsp("rtsp://grupo9:grupo9@45.186.5.30:554/stream1"))
