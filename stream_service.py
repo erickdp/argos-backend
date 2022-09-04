@@ -64,10 +64,10 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp):
     print("Iniciando stream %s" % url)
     # se define que live requerido y en la calidad deseada, esto afecta al rendimiento según los fps
     if not is_rtsp:
+        video_stream = sl.streams(url)["720p"].url
+    else:
         init_frames_video = 200
         speed = 2.3
-        video_stream = sl.streams(url)["360p"].url
-    else:
         video_stream = url
     # usamos la libreria de open cv u cv2 para procesar el video entrante en funcion de frames
     street_stream = cv2.VideoCapture(video_stream)
