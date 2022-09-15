@@ -1,4 +1,4 @@
-<div style="text-align: center;"><h1>ARGOS</h1></div>
+<div align="center"><h1>ARGOS</h1></div>
 
 <div align="center">
 <img alt="logo proyecto argos" src="img/argos-logo.png" />
