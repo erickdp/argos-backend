@@ -13,7 +13,7 @@
 ## Contenido
 - [Objetivo](#objetivo)
 - [Estructura General](#estructura)
-- [Métricas de los modelos IA](#Métricas de los modelos IA)
+- [Métricas de los modelos IA](#métricas)
 - [Arquitectura](#arquitectura)
 - [Ejemplo en la implementación](#ejemplos)
 
@@ -53,7 +53,7 @@ A contunuación las herrameintas completas usadas:
 * COLAB con suscripción pro para el entrenamiento
 * [ARGOS](https://github.com/alpalasaul/argos-client) - CLIENT
 
-## Métricas de los modelos IA
+## Métricas
 
 ___Matríz de confusión___ para 100 épocas de entrenamiento
 <img src="img/matriz-conf.png" alt="CI CPU testing" />
