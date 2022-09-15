@@ -41,9 +41,9 @@ opt = {
     "img-size": 640,  # tamaño de la imágen a la que se transforma
     "conf-thres": 0.25,  # threshold para la inferencia.
     "iou-thres": 0.45,  # NMS IoU threshold para inferencia
-    "device": 'cpu',  # device to run our model i.e. 0 or 0,1,2,3 or cpu
+    "device": 'cpu',  # device to run our model i.e. 0 for GPU or 0,1,2,3 or cpu
     "classes": [],  # clases que se desean filtrar, como tenemos 2 (casco y no casco las dos serán usadas)
-    "video-stream": {  # streams de cámaras del cuál se realiza la inferencia
+    "video-stream": { # streams de cámaras del cuál se realiza la inferencia
         "pl": "https://www.youtube.com/watch?v=zu6yUYEERwA",
         "ec": "https://www.youtube.com/watch?v=EnXaKSxnrqc",
         "ph": "https://www.youtube.com/watch?v=qgNTbBn0JCY&ab_channel=TheRealSamuiWebcam"
@@ -69,10 +69,9 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp, url_almacenad
         save_dates(dia_actual, 0, 0, 0, url_almacenada, camera_name)
     else:
         camera_name = saved_camera[0]
-        print("Stream ya existente", url_almacenada)
+        print("Stream ya existente", url_almacenada, camera_name)
 
     init_frames_video = 250
-    print("Iniciando stream %s" % url)
     # se define que live requerido y en la calidad deseada, esto afecta al rendimiento según los fps
     if not is_rtsp:
         video_stream = sl.streams(url)["720p"].url
@@ -89,19 +88,9 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp, url_almacenad
     h = int(street_stream.get(cv2.CAP_PROP_FRAME_HEIGHT))
     print(fps, w, h)
 
-    # descomentar para ver live en vivo
-    # while True:
-    #     ret, frame = street_stream.read()
-    #     if ret:
-    #         cv2.imshow('Frame', frame)
-    #         if cv2.waitKey(25) & 0xFF == ord('q'):
-    #             break
-    # street_stream.release()
-    # cv2.destroyAllWindows()
-
     pt = 0
     with torch.no_grad():  # permite que la gpu no guarde en cache el cálculo del gradiente
-        weights, imgsz = opt['weights'], opt['img-size']
+        weights, imgsz = opt['weights2'], opt['img-size']
         set_logging()
         device = select_device(opt['device'])
         half = device.type != 'cpu'
@@ -163,7 +152,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp, url_almacenad
                                     v_name = "%s%s%s%s.mp4" % (date.day, date.hour, date.minute, date.second)
                                     output = cv2.VideoWriter(
                                         f'{SOURCE_FILE}/{v_name}',
-                                        cv2.VideoWriter_fourcc(*'MP4V'), 30, (w, h))
+                                        cv2.VideoWriter_fourcc(*'DIVX'), 30, (w, h))
                                     print(f"--- Class Detection --- [{clase}] -- recording")
                                     print("Grabando video %s" % v_name)
                                     num_infracciones = num_infracciones + i
@@ -186,7 +175,7 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp, url_almacenad
 
                                 grabar_video = False
                                 output.release()
-                                threads.submit(upload_to_aws, f'{v_name}', f's{v_name}', speed)
+                                threads.submit(upload_to_aws, v_name, f'{url_almacenada}_s{v_name}', speed)
 
                     else:
                         grabar_frame = True
@@ -200,42 +189,46 @@ def init_steam(url: str, sl: Streamlink, my_queue: Queue, is_rtsp, url_almacenad
 
                         grabar_video = False
                         output.release()
-                        threads.submit(upload_to_aws, v_name, f's{v_name}', speed)
+                        threads.submit(upload_to_aws, f'{v_name}', f'{url_almacenada}_s{v_name}', speed)
 
             try:
                 item = my_queue.get_nowait()
             except queue.Empty:
+
                 end_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
 
-                if str(end_time - start_time)[:4] == '0:10':  # se envia cada 6 min
+                if str(end_time - start_time)[:4] == '0:03':  # se envia cada 6 min
                     print("Enviando numero de infractores a la bd", dia_actual, num_infracciones, num_no_infracciones,
-                          url_almacenada)
+                          url_almacenada, url)
                     save_dates(dia_actual, start_time.hour, num_infracciones, num_no_infracciones, url_almacenada,
                                camera_name)
                     num_infracciones = 0
                     num_no_infracciones = 0
                     start_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
                 continue
+
             else:
                 if item:
-                    conn.close()
-                    print("Saliendo del Stream y cerrando conexion")
+                    print("Enviando numero de infractores a la bd", dia_actual, num_infracciones, num_no_infracciones,
+                          url_almacenada, url)
+                    save_dates(dia_actual, start_time.hour, num_infracciones, num_no_infracciones, url_almacenada,
+                               camera_name)
+                    print("Saliendo del Stream", url)
                     break
 
-        # print("Video eliminado")
+        print("Video eliminado")
         street_stream.release()
         output.release()
         os.remove(f'{SOURCE_FILE}/{v_name}')
 
 
 def validate_rtsp(stream_url):
-    if re.search(r'rtsp:\/\/[a-z0-9]{3,8}:[a-z0-9]{3,8}@([0-9]+.){4}:[0-9]{3,4}([-a-zA-Z0-9@:%_\+.~#?&//=]*)',
-                 stream_url):
-        return True
-    elif re.search(r'[\/\/a-zA-Z0-9@:%._\+~#=]{2,256}\.\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)', stream_url):
-        return False
-    else:
-        return -2
+  if re.search(r'rtsp:\/\/[a-z0-9]{3,8}:[a-z0-9]{3,8}@([0-9]+.){4}:[0-9]{3,4}([-a-zA-Z0-9@:%_\+.~#?&//=]*)', stream_url):
+    return True
+  elif re.search(r'[\/\/a-zA-Z0-9@:%._\+~#=]{2,256}\.\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)', stream_url):
+    return False
+  else:
+    return -2
 
 
 def save_dates(dia_actual, start_time, num_infracciones, num_no_infracciones, camara, camera_name):
@@ -245,36 +238,6 @@ def save_dates(dia_actual, start_time, num_infracciones, num_no_infracciones, ca
     cur.execute(data)
     conn.commit()
     print("Guardando data")
-
-    # timezone = pytz.timezone("America/Guayaquil")
-    # temp = 1
-    # while temp != 0:
-    #     cur = conn.cursor()
-    #
-    #     fecha_actual = datetime.now(timezone)
-    #     hora_actual = fecha_actual.time().strftime('%H:%M')
-    #     dia_actual = fecha_actual.strftime('%y-%m-%d')  # ya es str
-    #
-    #     print(fecha_actual, hora_actual, dia_actual, type(dia_actual))
-    #
-    #     start_time = datetime.strptime(hora_actual, '%H:%M')
-    #     # sleep(5)
-    #     end_time = datetime.strptime(datetime.now(timezone).time().strftime('%H:%M'), '%H:%M')
-    #
-    #     end_time = datetime.strptime('01:33', '%H:%M')
-    #
-    #     final_time = end_time - start_time
-    #     print(type(final_time), final_time, str(final_time)[:4] == '0:01', '%s' % '2022-09-03')
-    #
-    #     # query = "INSERT INTO INFRACCIONES (fecha, hora, num_infracciones) VALUES (%s, %s, %s)"
-    #     data = opt['query'] % (f"'{dia_actual}'", start_time.hour, 5)
-    #     print(data)
-    #     cur.execute(data)
-    #
-    #     conn.commit()
-    #     temp = temp - 1
-    # conn.close()
-    # conn.close()
 
 
 def fetch_camera_data(url):
@@ -323,8 +286,8 @@ def fetch_all_data() -> list:
     cur.execute(data)
     arr = []
     for i in cur.fetchall():
-        if i[0] not in arr:
-            arr.append(i[0])
+        if {i[1], i[2]} not in arr:
+            arr.append({i[1], i[2]})
     return arr
 
 

@@ -17,29 +17,26 @@ app.add_middleware(
 
 # single_thread, my_queue, sl, app = init_threads()
 
-@app.get("/")
+@app.get("/", status_code=202)
 async def root():
     return {"msg": "RESTful de IA. Helmet-Detection"}
-
 
 @app.get("/stream", status_code=200)
 async def root(
         stream_url: Union[str, None] = None,
         stream_save: Union[str, None] = None,
-        name_camera: Union[str, None] = None
+        camera_name: Union[str, None] = None
 ):
     type_url = validate_rtsp(stream_url)
     if type_url == -2:
         raise HTTPException(status_code=404, detail="Recurso incorrecto")
-    threads.submit(init_steam, stream_url, source_sl, source_queue, type_url, stream_save, name_camera)
+    threads.submit(init_steam, stream_url, source_sl, source_queue, type_url, stream_save, camera_name)
     return {"msg": "Iniciando procesado de stream"}
 
-
-@app.get("/stop", status_code=200)
+@app.get("/stop", status_code=202)
 async def say_hello():
     source_queue.put(True)
     return {"msg": "Deteniendo procesamiento de stream"}
-
 
 @app.get("/fetch", status_code=200)
 async def get_dates(date: Union[str, None] = None, camara: Union[str, None] = None):
@@ -48,7 +45,6 @@ async def get_dates(date: Union[str, None] = None, camara: Union[str, None] = No
         "msg": "exito",
         'data': dates
     }
-
 
 @app.get("/fetchAll", status_code=200)
 async def get_all_dates():
