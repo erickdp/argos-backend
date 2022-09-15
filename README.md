@@ -1,6 +1,6 @@
 <div style="text-align: center;"><h1>ARGOS</h1></div>
 
-<div style="text-align: center">
+<div align="center">
 <img alt="logo proyecto argos" src="img/argos-logo.png" />
 <br>
 <img src="https://img.shields.io/badge/Miner%C3%ADa-UCE-blue?style=for-the-badge&logo=appveyor" alt="CI CPU testing" />
